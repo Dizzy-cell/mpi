@@ -14,7 +14,7 @@ from math import sin, cos, pi
 # ---------- 配置 ----------
 LEFT_IMG = "frame_1.png"   # 左图
 DEPTH_INPUT = "depth.png"     # 深度可为 .npy (float32 0..1) 或 单通道图片 (.png,.jpg)
-OUT_GIF = "wiggle.gif"
+OUT_GIF = "wiggle_cat.gif"
 FRAMES = 24       # 单次循环帧数（从 left->right）
 CYCLES = 2        # 循环次数
 MAX_SHIFT_PCT = 0.02  # 最大平移比例（相对于图像宽度），例如 0.02 = 2%
@@ -192,6 +192,16 @@ def save_video(frames, out_path, fps=24):
     out.release()
     print("Saved video:", out_path)
 
+def save_video_v2(frames, out_path, fps=24):
+    frames_rgb = []
+    for f in frames:
+        frames_rgb.append(cv2.cvtColor(f, cv2.COLOR_BGR2RGB))
+    
+    pred_mp4 = np.stack(frames_rgb, axis=0)  # T x H x W x 3
+    imageio.mimwrite(out_path, pred_mp4, fps=fps
+                     codes='libx264',
+                     quality=8,)
+
 def main():
     left = cv2.imread(LEFT_IMG, cv2.IMREAD_COLOR)
     if left is None:
@@ -200,7 +210,7 @@ def main():
     print("Loaded left:", left.shape, "depth:", depth.shape)
     frames = make_wiggle_frames(left, depth, frames=FRAMES, cycles=CYCLES, max_shift_pct=MAX_SHIFT_PCT)
     #save_gif(frames, OUT_GIF, fps=12)
-    save_video(frames, OUT_GIF.replace('.gif','.mp4'), fps=12)
-
+    #save_video(frames, OUT_GIF.replace('.gif','.mp4'), fps=12)
+    save_video_v2(frames, OUT_GIF.replace('.gif','.mp4'), fps=12)
 if __name__ == "__main__":
     main()
