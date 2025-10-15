@@ -198,9 +198,9 @@ def save_video_v2(frames, out_path, fps=24):
         frames_rgb.append(cv2.cvtColor(f, cv2.COLOR_BGR2RGB))
     
     pred_mp4 = np.stack(frames_rgb, axis=0)  # T x H x W x 3
-    imageio.mimwrite(out_path, pred_mp4, fps=fps
-                     codes='libx264',
-                     quality=8,)
+    imageio.mimwrite(out_path, pred_mp4, fps=fps,
+                     codec='libx264',
+                     quality=8)
 
 def main():
     left = cv2.imread(LEFT_IMG, cv2.IMREAD_COLOR)
