@@ -15,11 +15,11 @@ from math import sin, cos, pi
 LEFT_IMG = "frame_1.png"   # 左图
 DEPTH_INPUT = "depth.png"     # 深度可为 .npy (float32 0..1) 或 单通道图片 (.png,.jpg)
 OUT_GIF = "wiggle_cat_x_filled.gif"
-FRAMES = 24       # 单次循环帧数（从 left->right）
-CYCLES = 2        # 循环次数
-MAX_SHIFT_PCT = 0.02  # 最大平移比例（相对于图像宽度），例如 0.02 = 2%
+FRAMES = 124       # 单次循环帧数（从 left->right）
+CYCLES = 1        # 循环次数
+MAX_SHIFT_PCT = 0.04  # 最大平移比例（相对于图像宽度），例如 0.02 = 2%
 INPAINT_RADIUS = 3
-USE_SIN = True     # 用 sin 平滑插值 (更顺滑)
+USE_SIN = False     # 用 sin 平滑插值 (更顺滑)
 HOLE_FILL_METHOD = "none"  # "inpaint" 或 "dilate" 或 "none"
 # ------------------------
 
@@ -54,16 +54,16 @@ def load_depth(path, target_shape=None, blur_size=5, mode='dilate', kernel_size=
     
     return d
 
-def generate_shift_map(depth, max_shift_px, invert_depth=False):
+def generate_shift_map(depth, max_shift_px, invert_depth=False, power = 2):
     # depth: HxW in 0..1, by default 0=near, 1=far. adjust invert_depth accordingly.
     if invert_depth:
         depth = 1.0 - depth
     # compute shift per-pixel (near -> big shift)
     # here we map near (0) => max_shift, far(1)=>0
-    shift = (1.0 - depth) * max_shift_px
+    shift = (1.0 - depth) ** power * max_shift_px
     return shift.astype(np.float32)
 
-def warp_with_shift(image, shift_map, t, ty = 0):
+def warp_with_shift(image, shift_map, t = 0, ty = 0):
     """
     inverse mapping remap:
       For output pixel (x,y), sample from src (x - t*shift/2, y)
@@ -139,9 +139,16 @@ def make_wiggle_frames(left_img, depth_map, frames=24, cycles=1, max_shift_pct=0
                 s = 0.5 * (1 - np.cos(np.pi * i / (frames - 1)))
                 t = -1.0 + 2.0 * s
             else:
-                t = -1.0 + 2.0 * (i / (frames - 1))
+                #t = -1.0 + 2.0 * (i / (frames - 1))
+                t = -1.0 + 2.0 * (i / 24)
+            
+            # print(t)
             # warp
-            warped = warp_with_shift(left_img, shift_map, t, ty=0)
+
+            tx = np.sin(t * pi)         # 左右
+            ty = 0.5 * np.cos(t * pi)  # 上下微动
+
+            warped = warp_with_shift(left_img, shift_map, tx, ty=ty)
             #warped = warp_with_shift(left_img, shift_map, t=0, ty=t)
             # detect holes and fill
             mask = detect_holes(warped)
