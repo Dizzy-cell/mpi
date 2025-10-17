@@ -14,13 +14,13 @@ from math import sin, cos, pi
 # ---------- 配置 ----------
 LEFT_IMG = "frame_1.png"   # 左图
 DEPTH_INPUT = "depth.png"     # 深度可为 .npy (float32 0..1) 或 单通道图片 (.png,.jpg)
-OUT_GIF = "wiggle_cat.gif"
+OUT_GIF = "wiggle_cat_x_filled.gif"
 FRAMES = 24       # 单次循环帧数（从 left->right）
 CYCLES = 2        # 循环次数
 MAX_SHIFT_PCT = 0.02  # 最大平移比例（相对于图像宽度），例如 0.02 = 2%
 INPAINT_RADIUS = 3
 USE_SIN = True     # 用 sin 平滑插值 (更顺滑)
-HOLE_FILL_METHOD = "inpaint"  # "inpaint" 或 "dilate" 或 "none"
+HOLE_FILL_METHOD = "none"  # "inpaint" 或 "dilate" 或 "none"
 # ------------------------
 
 def load_depth(path, target_shape=None, blur_size=5, mode='dilate', kernel_size=3):
@@ -40,13 +40,13 @@ def load_depth(path, target_shape=None, blur_size=5, mode='dilate', kernel_size=
     if target_shape is not None and (d.shape[1], d.shape[0]) != target_shape:
         d = cv2.resize(d, target_shape, interpolation=cv2.INTER_LINEAR)
     
-        # 膨胀 or 腐蚀
+    # 膨胀 or 腐蚀
     if mode == 'dilate':
         kernel = np.ones((kernel_size, kernel_size), np.uint8)
         d = cv2.dilate(d, kernel, iterations=15)
-    elif mode == 'erode':
-        kernel = np.ones((kernel_size, kernel_size), np.uint8)
-        d = cv2.erode(d, kernel, iterations=15)
+    # elif mode == 'erode':
+    #     kernel = np.ones((kernel_size, kernel_size), np.uint8)
+    #     d = cv2.erode(d, kernel, iterations=15)
     
     # 高斯模糊，让层之间更平滑（防止分层断裂）
     d = cv2.GaussianBlur(d, (blur_size, blur_size), sigmaX=0)
@@ -63,7 +63,7 @@ def generate_shift_map(depth, max_shift_px, invert_depth=False):
     shift = (1.0 - depth) * max_shift_px
     return shift.astype(np.float32)
 
-def warp_with_shift(image, shift_map, t):
+def warp_with_shift(image, shift_map, t, ty = 0):
     """
     inverse mapping remap:
       For output pixel (x,y), sample from src (x - t*shift/2, y)
@@ -75,7 +75,7 @@ def warp_with_shift(image, shift_map, t):
     grid_x, grid_y = np.meshgrid(xs, ys)
     # shift factor: fraction of full shift. t in [-1,1]
     map_x = (grid_x - (t * shift_map / 2.0)).astype(np.float32)
-    map_y = grid_y.astype(np.float32)
+    map_y = (grid_y - (ty * shift_map / 2.0)).astype(np.float32)
     # remap with border black
     warped = cv2.remap(image, map_x, map_y, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
     return warped
@@ -117,7 +117,7 @@ def fill_holes(img, mask, method="inpaint"):
     inpainted = cv2.inpaint(img_8, mask, INPAINT_RADIUS, flags=cv2.INPAINT_TELEA)
     return inpainted
 
-def make_wiggle_frames(left_img, depth_map, frames=24, cycles=1, max_shift_pct=0.02):
+def make_wiggle_frames(left_img, depth_map, frames=24, cycles=1, max_shift_pct=0.02, ori_size=(1024, 1024)):
     H, W = left_img.shape[:2]
     max_shift_px = max(1, int(W * max_shift_pct))
     shift_map = generate_shift_map(depth_map, max_shift_px, invert_depth=False)
@@ -141,13 +141,17 @@ def make_wiggle_frames(left_img, depth_map, frames=24, cycles=1, max_shift_pct=0
             else:
                 t = -1.0 + 2.0 * (i / (frames - 1))
             # warp
-            warped = warp_with_shift(left_img, shift_map, t)
+            warped = warp_with_shift(left_img, shift_map, t, ty=0)
+            #warped = warp_with_shift(left_img, shift_map, t=0, ty=t)
             # detect holes and fill
             mask = detect_holes(warped)
             if HOLE_FILL_METHOD != "none":
                 filled = fill_holes(warped, mask, method=HOLE_FILL_METHOD)
             else:
                 filled = warped
+            
+            filled = cv2.resize(filled, (ori_size[1], ori_size[0]), interpolation=cv2.INTER_LINEAR)
+            
             out_frames.append(filled)
     return out_frames
 
@@ -207,8 +211,13 @@ def main():
     if left is None:
         raise RuntimeError("Cannot read left image: " + LEFT_IMG)
     depth = load_depth(DEPTH_INPUT, target_shape=(left.shape[1], left.shape[0]))
+
+    ori_size = left.shape[:2]   # (H,W)
+    left = cv2.resize(left, (1024, 1024))
+    depth = cv2.resize(depth, (1024, 1024))
+
     print("Loaded left:", left.shape, "depth:", depth.shape)
-    frames = make_wiggle_frames(left, depth, frames=FRAMES, cycles=CYCLES, max_shift_pct=MAX_SHIFT_PCT)
+    frames = make_wiggle_frames(left, depth, frames=FRAMES, cycles=CYCLES, max_shift_pct=MAX_SHIFT_PCT, ori_size=ori_size)
     #save_gif(frames, OUT_GIF, fps=12)
     #save_video(frames, OUT_GIF.replace('.gif','.mp4'), fps=12)
     save_video_v2(frames, OUT_GIF.replace('.gif','.mp4'), fps=12)
